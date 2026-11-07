@@ -27,6 +27,8 @@ jobs:
   smoke-test:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -51,3 +53,15 @@ jobs:
         with:
           name: smoke-results
           path: out/
+      - name: Publish results to branch smoke-results
+        if: always()
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          mkdir -p /tmp/res && cp -r out/* /tmp/res/ 2>/dev/null || true
+          git checkout --orphan smoke-results
+          git rm -rf . -q || true
+          mkdir -p results && cp -r /tmp/res/* results/ 2>/dev/null || true
+          git add results
+          git commit -m "smoke results for ${{ github.sha }}"
+          git push -f origin smoke-results
