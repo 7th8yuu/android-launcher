@@ -150,7 +150,7 @@ private fun MenuCard(s: LauncherState, spec: MenuSpec) {
         Modifier
             .widthIn(min = 230.dp, max = 300.dp)
             .glass(RoundedCornerShape(26.dp), 0.85f)
-            .background(Color.Black.copy(alpha = 0.38f))
+            .background(Color.Black.copy(alpha = 0.62f))
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
     ) {
         if (spec.preview != null || spec.title != null) {

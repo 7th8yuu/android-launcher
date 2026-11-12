@@ -96,7 +96,7 @@ fun CalendarCard(s: LauncherState, modifier: Modifier = Modifier) {
             .padding(14.dp)
     ) {
         Text(dow.uppercase(), color = Color(0xFFFF453A), fontSize = 13.sp, fontWeight = FontWeight.Bold)
-        Text(today.dayOfMonth.toString(), color = Color.White, fontSize = 48.sp, fontWeight = FontWeight.Light)
+        Text(today.dayOfMonth.toString(), color = Color.White, fontSize = 38.sp, fontWeight = FontWeight.Light)
         Text(month, color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp)
     }
 }

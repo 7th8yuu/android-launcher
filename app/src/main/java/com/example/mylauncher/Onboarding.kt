@@ -291,6 +291,7 @@ private fun HelloPage(onNext: () -> Unit) {
             "Chào mừng đến với My Launcher",
             color = Color.White.copy(alpha = 0.8f),
             fontSize = 18.sp,
+            textAlign = TextAlign.Center,
             modifier = Modifier.graphicsLayer { alpha = enter.value; translationY = (1f - enter.value) * 30.dp.toPx() }
         )
         Spacer(Modifier.weight(1f))

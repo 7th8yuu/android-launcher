@@ -64,6 +64,7 @@ jobs:
         with:
           api-level: 34
           arch: x86_64
+          disable-animations: false
           target: google_apis
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: bash ./scripts/smoke.sh
