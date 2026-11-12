@@ -51,9 +51,13 @@ class Store(ctx: Context) {
     val dynamicColor = BoolPref(sp, "dynamic_color", true)
     val iconSize = IntPref(sp, "icon_size", 56)
     val columns = IntPref(sp, "columns", 4)
-    val iconShape = IntPref(sp, "icon_shape", 0)
-    val glass = FloatPref(sp, "glass", 0.55f)
+    val iconShape = IntPref(sp, "icon_shape", 1)
+    val glass = FloatPref(sp, "glass", 0.6f)
     val iconPack = StrPref(sp, "icon_pack", "")
+    val aiKey = StrPref(sp, "ai_key", "")
+    val aiModel = StrPref(sp, "ai_model", "claude-haiku-5-5")
+    val swipeDownSearch = BoolPref(sp, "swipe_down_search", true)
+    val onboarded = BoolPref(sp, "onboarded", false)
 
     var iconVersion by mutableIntStateOf(0)
 
@@ -65,6 +69,18 @@ class Store(ctx: Context) {
         private set
     var catOverride by mutableStateOf(readMap("cat"))
         private set
+
+    var launchCounts by mutableStateOf(readMap("launches").mapValues { it.value.toIntOrNull() ?: 0 })
+        private set
+
+    fun bumpLaunch(key: String) {
+        val m = launchCounts.toMutableMap()
+        m[key] = (m[key] ?: 0) + 1
+        launchCounts = m
+        val o = JSONObject()
+        m.forEach { (k, v) -> o.put(k, v.toString()) }
+        sp.edit().putString("launches", o.toString()).apply()
+    }
 
     fun seeded(): Boolean = sp.contains("pages")
 

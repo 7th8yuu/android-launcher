@@ -1,5 +1,6 @@
 package com.example.mylauncher
 
+import android.Manifest
 import android.app.Activity
 import android.appwidget.AppWidgetHost
 import android.appwidget.AppWidgetManager
@@ -8,6 +9,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.LauncherApps
+import android.content.pm.ShortcutInfo
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
@@ -48,6 +51,10 @@ class MainActivity : ComponentActivity() {
     private val bindWidget = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
         if (res.resultCode == Activity.RESULT_OK) afterBind(pendingWidgetId)
         else widgetHost.deleteAppWidgetId(pendingWidgetId)
+    }
+
+    private val contactsPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+        state.permTick++
     }
 
     private val pkgReceiver = object : BroadcastReceiver() {
@@ -94,7 +101,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        state.launching = false
+        Tilt.start(this)
+        state.onReturn()
+        state.permTick++
+    }
+
+    override fun onPause() {
+        Tilt.stop()
+        super.onPause()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -110,6 +124,19 @@ class MainActivity : ComponentActivity() {
     // ---------- Hành động ----------
     fun toast(m: String) = Toast.makeText(this, m, Toast.LENGTH_SHORT).show()
 
+    fun safeStart(i: Intent, errMsg: String) {
+        try {
+            startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (_: Exception) {
+            toast(errMsg)
+        }
+    }
+
+    fun openUrl(url: String) {
+        if (!url.startsWith("https://") && !url.startsWith("http://")) return
+        safeStart(Intent(Intent.ACTION_VIEW, Uri.parse(url)), "Không mở được liên kết")
+    }
+
     fun lockScreen() {
         if (!LockService.lock()) {
             toast("Cần bật dịch vụ trợ năng để khoá màn hình")
@@ -122,26 +149,58 @@ class MainActivity : ComponentActivity() {
         try { pickImage.launch("image/*") } catch (_: Exception) { toast("Không mở được bộ chọn ảnh") }
     }
 
+    fun requestContacts() {
+        try { contactsPermission.launch(Manifest.permission.READ_CONTACTS) } catch (_: Exception) {
+            safeStart(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")), "Không mở được cài đặt")
+        }
+    }
+
     fun openAppInfo(app: AppEntry) {
-        startActivity(
-            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${app.pkg}"))
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        )
+        safeStart(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${app.pkg}")), "Không mở được thông tin")
     }
 
     fun uninstall(app: AppEntry) {
-        startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:${app.pkg}")))
+        safeStart(Intent(Intent.ACTION_DELETE, Uri.parse("package:${app.pkg}")), "Không gỡ được ứng dụng")
     }
 
     fun openWallpaperPicker() {
-        try {
-            startActivity(Intent.createChooser(Intent(Intent.ACTION_SET_WALLPAPER), "Chọn hình nền"))
-        } catch (_: Exception) { toast("Không mở được trình chọn hình nền") }
+        safeStart(Intent.createChooser(Intent(Intent.ACTION_SET_WALLPAPER), "Chọn hình nền"), "Không mở được trình chọn hình nền")
     }
 
     fun openDefaultLauncherSettings() {
         try { startActivity(Intent(Settings.ACTION_HOME_SETTINGS)) } catch (_: Exception) {
-            startActivity(Intent(Settings.ACTION_SETTINGS))
+            safeStart(Intent(Settings.ACTION_SETTINGS), "Không mở được cài đặt")
+        }
+    }
+
+    fun openOnboarding() {
+        startActivity(Intent(this, OnboardingActivity::class.java).putExtra(OnboardingActivity.EXTRA_RESTART, true))
+    }
+
+    // ---------- Lối tắt ứng dụng (cần là launcher mặc định) ----------
+    fun shortcutsFor(pkg: String): List<ShortcutInfo> = try {
+        val la = getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps
+        if (!la.hasShortcutHostPermission()) {
+            emptyList()
+        } else {
+            val q = LauncherApps.ShortcutQuery()
+                .setPackage(pkg)
+                .setQueryFlags(
+                    LauncherApps.ShortcutQuery.FLAG_MATCH_DYNAMIC or
+                        LauncherApps.ShortcutQuery.FLAG_MATCH_MANIFEST or
+                        LauncherApps.ShortcutQuery.FLAG_MATCH_PINNED
+                )
+            (la.getShortcuts(q, android.os.Process.myUserHandle()) ?: emptyList()).filter { it.isEnabled }.take(4)
+        }
+    } catch (e: Exception) {
+        emptyList()
+    }
+
+    fun startShortcut(sc: ShortcutInfo) {
+        try {
+            (getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps).startShortcut(sc, null, null)
+        } catch (_: Exception) {
+            toast("Không mở được lối tắt")
         }
     }
 

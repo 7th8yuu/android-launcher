@@ -2,4 +2,5 @@
     <string name="app_name">My Launcher</string>
     <string name="lock_service_label">My Launcher – Khoá màn hình</string>
     <string name="lock_service_desc">Cho phép My Launcher khoá màn hình khi bạn chạm hai lần vào màn hình chính. Dịch vụ này không đọc nội dung màn hình.</string>
+    <string name="badge_service_label">My Launcher – Chấm thông báo</string>
 </resources>

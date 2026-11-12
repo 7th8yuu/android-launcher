@@ -46,6 +46,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -208,10 +209,52 @@ private fun SettingsScreen(s: LauncherState) {
             }
 
             item {
+                Section("AI (Claude)") {
+                    Text(
+                        "Khi bạn hỏi AI trong ô Tìm kiếm, câu hỏi và tên các ứng dụng đã cài sẽ được gửi tới api.anthropic.com " +
+                            "bằng khoá API của bạn. Khoá chỉ lưu trên máy này (bộ nhớ riêng của ứng dụng).",
+                        color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp
+                    )
+                    GlassField(st.aiKey.value, { st.aiKey.value = it }, "Khoá API (sk-ant-…)", password = true)
+                    GlassField(st.aiModel.value, { st.aiModel.value = it }, "Tên model", password = false)
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button(onClick = { s.testAi() }) { Text("Kiểm tra") }
+                        OutlinedButton(onClick = { s.aiCategorize() }) { Text("Phân loại app bằng AI") }
+                    }
+                }
+            }
+
+            item {
+                Section("Tìm kiếm & thông báo") {
+                    val ctx = LocalContext.current
+                    val contacts = remember(s.permTick) { Sys.hasContacts(ctx) }
+                    val listener = remember(s.permTick) { Sys.isListenerEnabled(ctx) }
+                    SwitchRow(
+                        "Vuốt xuống để tìm kiếm",
+                        "Vuốt xuống trên màn hình chính để mở Spotlight",
+                        st.swipeDownSearch.value
+                    ) { st.swipeDownSearch.value = it }
+                    if (contacts) {
+                        Text("Danh bạ: đã cấp quyền ✓", color = Color(0xFF8CE99A), fontSize = 14.sp)
+                    } else {
+                        OutlinedButton(onClick = { s.act.requestContacts() }) { Text("Cấp quyền Danh bạ để tìm người liên hệ") }
+                    }
+                    if (listener) {
+                        Text("Chấm đỏ thông báo: đang bật ✓", color = Color(0xFF8CE99A), fontSize = 14.sp)
+                    } else {
+                        OutlinedButton(onClick = {
+                            s.act.safeStart(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS), "Không mở được cài đặt")
+                        }) { Text("Bật chấm đỏ thông báo") }
+                    }
+                }
+            }
+
+            item {
                 Section("Hệ thống") {
                     Button(onClick = { s.act.openDefaultLauncherSettings() }) {
                         Text("Đặt làm launcher mặc định")
                     }
+                    OutlinedButton(onClick = { s.act.openOnboarding() }) { Text("Chạy lại hướng dẫn ban đầu") }
                 }
             }
         }
