@@ -1,0 +1,6 @@
+11-20 12:04:32.478  3090  3090 D MyLauncher: onBack menu=false folder=null spot=1.0 q='12+30' drawer=0.0 focus=false edit=false
+11-20 12:04:43.833  3090  3090 D MyLauncher: onBack menu=false folder=null spot=1.0 q='' drawer=0.0 focus=false edit=false
+11-20 12:04:44.987  3090  3090 D MyLauncher: onBack menu=false folder=null spot=0.0 q='' drawer=0.0 focus=false edit=false
+11-20 12:04:51.845  3090  3090 D MyLauncher: onBack menu=false folder=null spot=0.0 q='' drawer=0.0 focus=false edit=false
+11-20 12:04:53.880  3090  3090 D MyLauncher: onBack menu=false folder=null spot=0.0 q='' drawer=0.0 focus=false edit=false
+11-20 12:05:26.539  3090  3090 D MyLauncher: onBack menu=false folder=null spot=0.0 q='' drawer=0.0 focus=false edit=false
