@@ -35,6 +35,7 @@ fun LauncherRoot(s: LauncherState) {
             HomeLayer(s)
             DrawerHost(s, screenH)
             SpotlightLayer(s)
+            FolderLayer(s)
             WidgetPicker(s)
             SettingsLayer(s)
             MenuLayer(s)
@@ -45,7 +46,7 @@ fun LauncherRoot(s: LauncherState) {
     // Làm mờ hình nền phía sau khi mở thư viện / tìm kiếm / cài đặt (Android 12+)
     if (Build.VERSION.SDK_INT >= 31) {
         val overlay by animateFloatAsState(
-            targetValue = if (s.showSettings || s.showWidgets) 1f else 0f,
+            targetValue = if (s.showSettings || s.showWidgets || s.menu != null || s.openFolder != null) 1f else 0f,
             animationSpec = tween(300),
             label = "overlayBlur"
         )

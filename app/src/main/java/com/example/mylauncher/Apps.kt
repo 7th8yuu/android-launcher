@@ -7,6 +7,8 @@ import android.content.pm.ApplicationInfo
 import android.content.res.Resources
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.Drawable
 import android.net.Uri
 import androidx.compose.ui.graphics.ImageBitmap
@@ -139,7 +141,28 @@ class IconProvider(private val ctx: Context, private val store: Store) {
         } catch (_: Exception) {
             pm.defaultActivityIcon
         }
-        return d.toBitmap(192, 192).asImageBitmap()
+        return renderIcon(d).asImageBitmap()
+    }
+
+    /**
+     * Vẽ icon mặc định tràn viền hình vuông (như iOS): với adaptive icon, ghép lớp nền + lớp trước
+     * trong vùng nhìn thấy 72/108 rồi để UI bo squircle. Icon cũ được đặt lên nền sáng.
+     */
+    private fun renderIcon(d: Drawable): Bitmap {
+        val s = 192
+        val bmp = Bitmap.createBitmap(s, s, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        c.drawColor(0xFFF2F2F7.toInt())
+        if (d is AdaptiveIconDrawable) {
+            val inset = (s * 18f / 72f).toInt()
+            d.background?.let { it.setBounds(-inset, -inset, s + inset, s + inset); it.draw(c) }
+            d.foreground?.let { it.setBounds(-inset, -inset, s + inset, s + inset); it.draw(c) }
+        } else {
+            val pad = (s * 0.14f).toInt()
+            d.setBounds(pad, pad, s - pad, s - pad)
+            d.draw(c)
+        }
+        return bmp
     }
 
     private fun packDrawable(app: AppEntry): Drawable? {

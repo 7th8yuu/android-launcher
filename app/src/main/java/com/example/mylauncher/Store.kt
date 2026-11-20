@@ -41,6 +41,9 @@ class StrPref(private val sp: SharedPreferences, private val key: String, def: S
 
 data class Page(val apps: List<String> = emptyList(), val widgets: List<Int> = emptyList())
 
+/** Thư mục kiểu iOS. Trong Page.apps, thư mục được lưu dưới dạng "folder:<id>". */
+data class Folder(val id: String, val name: String, val apps: List<String>)
+
 @Stable
 class Store(ctx: Context) {
     private val sp: SharedPreferences = ctx.getSharedPreferences("launcher", Context.MODE_PRIVATE)
@@ -49,13 +52,13 @@ class Store(ctx: Context) {
     val showLabels = BoolPref(sp, "labels", true)
     val blur = BoolPref(sp, "blur", true)
     val dynamicColor = BoolPref(sp, "dynamic_color", true)
-    val iconSize = IntPref(sp, "icon_size", 56)
+    val iconSize = IntPref(sp, "icon_size", 60)
     val columns = IntPref(sp, "columns", 4)
     val iconShape = IntPref(sp, "icon_shape", 1)
     val glass = FloatPref(sp, "glass", 0.6f)
     val iconPack = StrPref(sp, "icon_pack", "")
     val aiKey = StrPref(sp, "ai_key", "")
-    val aiModel = StrPref(sp, "ai_model", "claude-haiku-5-5")
+    val aiModel = StrPref(sp, "ai_model", Ai.DEFAULT_MODEL)
     val swipeDownSearch = BoolPref(sp, "swipe_down_search", true)
     val onboarded = BoolPref(sp, "onboarded", false)
 
@@ -68,6 +71,8 @@ class Store(ctx: Context) {
     var hidden by mutableStateOf(readStrings("hidden").toSet())
         private set
     var catOverride by mutableStateOf(readMap("cat"))
+        private set
+    var folders by mutableStateOf(readFolders())
         private set
 
     var launchCounts by mutableStateOf(readMap("launches").mapValues { it.value.toIntOrNull() ?: 0 })
@@ -102,6 +107,31 @@ class Store(ctx: Context) {
     fun commitHidden(h: Set<String>) {
         hidden = h
         sp.edit().putString("hidden", JSONArray(h.toList()).toString()).apply()
+    }
+
+    fun commitFolders(m: Map<String, Folder>) {
+        folders = m
+        val o = JSONObject()
+        m.forEach { (id, f) ->
+            o.put(id, JSONObject().put("name", f.name).put("apps", JSONArray(f.apps)))
+        }
+        sp.edit().putString("folders", o.toString()).apply()
+    }
+
+    private fun readFolders(): Map<String, Folder> {
+        val s = sp.getString("folders", null) ?: return emptyMap()
+        return try {
+            val o = JSONObject(s)
+            val m = LinkedHashMap<String, Folder>()
+            o.keys().forEach { id ->
+                val f = o.getJSONObject(id)
+                val a = f.getJSONArray("apps")
+                m[id] = Folder(id, f.optString("name", "Thư mục"), List(a.length()) { a.getString(it) })
+            }
+            m
+        } catch (e: Exception) {
+            emptyMap()
+        }
     }
 
     fun commitCat(m: Map<String, String>) {

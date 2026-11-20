@@ -356,12 +356,12 @@ private fun PermsPage(
                 Modifier.fillMaxWidth().glass(RoundedCornerShape(22.dp), 0.6f).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("Trợ lý AI (tuỳ chọn)", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                Text("Trợ lý AI Gemini (tuỳ chọn)", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                 Text(
-                    "Dán khoá API Anthropic để hỏi AI trong ô tìm kiếm. Khi dùng, câu hỏi và tên các ứng dụng đã cài sẽ được gửi tới api.anthropic.com. Khoá chỉ lưu trên máy này.",
+                    "Dán khoá API Gemini (lấy miễn phí ở aistudio.google.com/apikey) để hỏi AI trong ô tìm kiếm. Khi dùng, câu hỏi và tên các ứng dụng đã cài sẽ được gửi tới Google Gemini API. Khoá chỉ lưu trên máy này.",
                     color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp
                 )
-                GlassField(store.aiKey.value, { store.aiKey.value = it }, "sk-ant-…", password = true)
+                GlassField(store.aiKey.value, { store.aiKey.value = it }, "AIza…", password = true)
             }
         }
         Spacer(Modifier.height(12.dp))
@@ -388,7 +388,7 @@ private fun DefaultPage(isDefault: Boolean, onDefault: () -> Unit, onSkip: () ->
         Spacer(Modifier.height(28.dp))
         Text(
             if (isDefault) "Đã là launcher mặc định" else "Chọn My Launcher làm màn hình chính",
-            color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center
+            color = Color.White, fontSize = 26.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center
         )
         Text(
             if (isDefault) "Tuyệt! Đang chuyển tiếp…"
@@ -433,7 +433,7 @@ private fun DonePage(isDefault: Boolean, onEnter: () -> Unit) {
             drawPath(dst, Color.White, style = Stroke(width = 9.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
         }
         Spacer(Modifier.height(28.dp))
-        Text("Mọi thứ đã sẵn sàng", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
+        Text("Mọi thứ đã sẵn sàng", color = Color.White, fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
         Text(
             if (isDefault) "My Launcher là màn hình chính của bạn."
             else "Bạn có thể đặt làm launcher mặc định sau trong Cài đặt launcher.",

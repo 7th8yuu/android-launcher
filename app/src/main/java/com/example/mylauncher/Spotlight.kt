@@ -307,7 +307,7 @@ private fun RowView(s: LauncherState, r: SRow) {
             }
         }
         SRow.Hint -> Text(
-            "Nhập để tìm ứng dụng, danh bạ, cài đặt hoặc tính nhanh (vd: 12*(3+4)).\nThêm khoá API trong Cài đặt → AI để hỏi AI ngay tại đây.",
+            "Nhập để tìm ứng dụng, danh bạ, cài đặt hoặc tính nhanh (vd: 12*(3+4)).\nThêm khoá API Gemini trong Cài đặt → AI để hỏi AI ngay tại đây.",
             color = Color.White.copy(alpha = 0.7f),
             fontSize = 14.sp,
             modifier = Modifier.padding(horizontal = 6.dp)

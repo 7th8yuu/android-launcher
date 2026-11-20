@@ -1,7 +1,6 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-
 package com.example.mylauncher
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -40,7 +39,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -51,17 +49,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -97,11 +99,18 @@ private fun drawerNested(s: LauncherState, screenH: Float) = object : NestedScro
     }
 }
 
+/** Thư viện ứng dụng kiểu iOS: thẻ danh mục + ô tìm kiếm; chạm vào ô tìm kiếm để ra danh sách A–Z. */
 @Composable
 private fun DrawerContent(s: LauncherState, screenH: Float) {
     val store = s.store
     val keyboard = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
     DisposableEffect(Unit) { onDispose { keyboard?.hide() } }
+    // Back khi đang tìm kiếm: bỏ focus (về lại các thẻ danh mục) trước khi đóng thư viện
+    BackHandler(enabled = s.libraryFocus) {
+        focusManager.clearFocus()
+        keyboard?.hide()
+    }
     val nested = remember(screenH) { drawerNested(s, screenH) }
 
     val visible = remember(s.apps, store.hidden) { s.apps.filter { it.key !in store.hidden } }
@@ -110,6 +119,7 @@ private fun DrawerContent(s: LauncherState, screenH: Float) {
         if (q.isEmpty()) visible else visible.filter { it.label.contains(q, ignoreCase = true) }
     }
     val grouped = remember(visible, store.catOverride) { visible.groupBy { s.catOf(it) } }
+    val showList = s.libraryFocus || q.isNotEmpty()
 
     Box(
         Modifier
@@ -129,28 +139,12 @@ private fun DrawerContent(s: LauncherState, screenH: Float) {
                 .padding(horizontal = 16.dp)
         ) {
             DrawerSearch(s) { results.firstOrNull()?.let { s.launch(it, null) } }
-            if (q.isEmpty()) {
-                Row(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = s.libraryMode,
-                        onClick = { s.libraryMode = true },
-                        label = { Text("Thư viện") }
-                    )
-                    FilterChip(
-                        selected = !s.libraryMode,
-                        onClick = { s.libraryMode = false },
-                        label = { Text("A–Z") }
-                    )
-                }
-            } else {
-                Spacer(Modifier.size(8.dp))
-            }
-
+            Spacer(Modifier.size(12.dp))
             Box(Modifier.weight(1f).fillMaxWidth().nestedScroll(nested)) {
-                if (q.isEmpty() && s.libraryMode) {
-                    LibraryGrid(s, grouped)
-                } else {
+                if (showList) {
                     AllAppsGrid(s, results, q.isNotEmpty())
+                } else {
+                    LibraryGrid(s, grouped)
                 }
                 AnimatedContent(
                     targetState = s.openCat,
@@ -187,7 +181,8 @@ private fun DrawerSearch(s: LauncherState, onSearch: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 8.dp)
-            .glass(RoundedCornerShape(28.dp), s.store.glass.value + 0.15f),
+            .onFocusChanged { s.libraryFocus = it.isFocused }
+            .glass(RoundedCornerShape(26.dp), s.store.glass.value + 0.15f),
         decorationBox = { inner ->
             Row(
                 Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
@@ -197,7 +192,7 @@ private fun DrawerSearch(s: LauncherState, onSearch: () -> Unit) {
                 Spacer(Modifier.width(10.dp))
                 Box(Modifier.weight(1f)) {
                     if (s.query.isEmpty()) {
-                        Text("Tìm ứng dụng…", color = Color.White.copy(alpha = 0.55f), fontSize = 16.sp)
+                        Text("Thư viện ứng dụng", color = Color.White.copy(alpha = 0.6f), fontSize = 16.sp)
                     }
                     inner()
                 }
@@ -216,9 +211,9 @@ private fun LibraryGrid(s: LauncherState, grouped: Map<Cat, List<AppEntry>>) {
     val cats = Cat.values().filter { !grouped[it].isNullOrEmpty() }
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
-        contentPadding = PaddingValues(top = 8.dp, bottom = 32.dp),
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        contentPadding = PaddingValues(top = 4.dp, bottom = 32.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
         modifier = Modifier.fillMaxSize()
     ) {
         items(cats, key = { it.name }) { cat -> CategoryCard(s, cat, grouped[cat].orEmpty()) }
@@ -226,24 +221,56 @@ private fun LibraryGrid(s: LauncherState, grouped: Map<Cat, List<AppEntry>>) {
 }
 
 @Composable
-private fun CategoryCard(s: LauncherState, cat: Cat, apps: List<AppEntry>) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .glass(RoundedCornerShape(28.dp), s.store.glass.value)
-            .bounceClick { s.openCat = cat }
-            .padding(16.dp)
-    ) {
-        Text(cat.title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-        Text("${apps.size} ứng dụng", color = Color.White.copy(alpha = 0.65f), fontSize = 12.sp)
-        Spacer(Modifier.size(12.dp))
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            apps.take(4).chunked(2).forEach { r ->
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    r.forEach { AppIcon(s, it, 44.dp) }
+private fun SlotIcon(s: LauncherState, app: AppEntry?, size: Dp) {
+    if (app != null) AppIcon(s, app, size) else Spacer(Modifier.size(size))
+}
+
+/** Ô thứ 4 của thẻ: nếu còn nhiều ứng dụng thì hiện cụm 2x2 icon nhỏ, như App Library của iOS. */
+@Composable
+private fun FourthSlot(s: LauncherState, apps: List<AppEntry>, size: Dp) {
+    if (apps.size > 4) {
+        val rest = apps.drop(3).take(4)
+        val mini = size * 0.44f
+        Column(Modifier.size(size), verticalArrangement = Arrangement.SpaceBetween) {
+            rest.chunked(2).forEach { r ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    r.forEach { a -> AppIcon(s, a, mini) }
+                    repeat(2 - r.size) { Spacer(Modifier.size(mini)) }
                 }
             }
         }
+    } else {
+        SlotIcon(s, apps.getOrNull(3), size)
+    }
+}
+
+@Composable
+private fun CategoryCard(s: LauncherState, cat: Cat, apps: List<AppEntry>) {
+    val iconSize = 50.dp
+    Column(
+        Modifier.fillMaxWidth().bounceClick { s.openCat = cat },
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .glass(RoundedCornerShape(28.dp), s.store.glass.value)
+                .padding(vertical = 16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    SlotIcon(s, apps.getOrNull(0), iconSize)
+                    SlotIcon(s, apps.getOrNull(1), iconSize)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    SlotIcon(s, apps.getOrNull(2), iconSize)
+                    FourthSlot(s, apps, iconSize)
+                }
+            }
+        }
+        Spacer(Modifier.size(7.dp))
+        Text(cat.title, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
     }
 }
 

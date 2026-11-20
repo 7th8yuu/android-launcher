@@ -33,10 +33,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-enum class Src { HOME, DOCK, DRAWER }
+enum class Src { HOME, DOCK, DRAWER, FOLDER }
 
 fun LauncherState.appMenu(app: AppEntry, rect: Rect, src: Src, page: Int) {
     val items = ArrayList<MenuItem>()
@@ -61,6 +65,7 @@ fun LauncherState.appMenu(app: AppEntry, rect: Rect, src: Src, page: Int) {
             }
         }
         Src.DOCK -> items += MenuItem("Xoá khỏi dock") { removeFromDock(app.key) }
+        Src.FOLDER -> items += MenuItem("Đưa ra khỏi thư mục") { openFolder?.let { removeFromFolder(it, app.key) } }
     }
     items += MenuItem("Đổi biểu tượng (chọn ảnh)…") { act.pickIconFor(app) }
     if (icons.hasCustom(app.key)) {
@@ -73,14 +78,22 @@ fun LauncherState.appMenu(app: AppEntry, rect: Rect, src: Src, page: Int) {
     items += MenuItem("Ẩn ứng dụng") { hide(app) }
     items += MenuItem("Thông tin ứng dụng") { act.openAppInfo(app) }
     items += MenuItem("Gỡ cài đặt", destructive = true) { act.uninstall(app) }
-    menu = MenuSpec(rect, app.label, items, app)
+    menu = MenuSpec(rect, null, items, app)
 }
 
 private fun LauncherState.categoryMenu(app: AppEntry, rect: Rect): MenuSpec {
     val items = ArrayList<MenuItem>()
     items += MenuItem("Tự động") { setCategory(app, null) }
     Cat.values().forEach { c -> items += MenuItem(c.title) { setCategory(app, c) } }
-    return MenuSpec(rect, "Danh mục", items, app)
+    return MenuSpec(rect, "Danh mục: ${app.label}", items)
+}
+
+fun LauncherState.folderMenu(token: String, anchor: Rect): MenuSpec {
+    val items = ArrayList<MenuItem>()
+    items += MenuItem("Mở thư mục") { openFolderAt(token, anchor) }
+    items += MenuItem("Chỉnh sửa Màn hình chính") { editMode = true }
+    items += MenuItem("Xoá thư mục (giữ ứng dụng)", destructive = true) { deleteFolder(token) }
+    return MenuSpec(anchor, folderOf(token)?.name, items)
 }
 
 fun LauncherState.homeMenu(index: Int, anchor: Rect): MenuSpec {
@@ -120,18 +133,29 @@ fun MenuLayer(s: LauncherState) {
 
 @Composable
 private fun MenuPopup(s: LauncherState, spec: MenuSpec) {
+    val dens = LocalDensity.current
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.32f))
+            .background(Color.Black.copy(alpha = 0.30f))
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { s.menu = null }
     ) {
+        // Icon "nhấc lên" phía trên nền mờ, giống menu giữ lâu của iOS
+        spec.preview?.let { app ->
+            val iconPx = with(dens) { s.store.iconSize.value.dp.toPx() }
+            val topPad = with(dens) { 6.dp.toPx() }
+            Box(
+                Modifier
+                    .offset { IntOffset((spec.anchor.center.x - iconPx / 2f).toInt(), (spec.anchor.top + topPad).toInt()) }
+                    .graphicsLayer { scaleX = 1.14f; scaleY = 1.14f }
+            ) { AppIcon(s, app, s.store.iconSize.value.dp) }
+        }
         Box(
             Modifier.layout { measurable, c ->
                 val p = measurable.measure(c.copy(minWidth = 0, minHeight = 0))
                 layout(c.maxWidth, c.maxHeight) {
                     val margin = 16.dp.roundToPx()
-                    val gap = 10.dp.roundToPx()
+                    val gap = 14.dp.roundToPx()
                     val x = (spec.anchor.center.x - p.width / 2f).toInt()
                         .coerceIn(margin, (c.maxWidth - p.width - margin).coerceAtLeast(margin))
                     var y = spec.anchor.bottom.toInt() + gap
@@ -148,34 +172,26 @@ private fun MenuPopup(s: LauncherState, spec: MenuSpec) {
 private fun MenuCard(s: LauncherState, spec: MenuSpec) {
     Column(
         Modifier
-            .widthIn(min = 230.dp, max = 300.dp)
-            .glass(RoundedCornerShape(26.dp), 0.85f)
-            .background(Color.Black.copy(alpha = 0.62f))
+            .widthIn(min = 230.dp, max = 290.dp)
+            .glass(RoundedCornerShape(22.dp), 0.85f)
+            .background(Color.Black.copy(alpha = 0.55f))
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
     ) {
-        if (spec.preview != null || spec.title != null) {
-            Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                spec.preview?.let {
-                    AppIcon(s, it, 36.dp)
-                    Spacer(Modifier.width(12.dp))
-                }
-                spec.title?.let {
-                    Text(
-                        it,
-                        color = Color.White,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
+        if (spec.preview == null && spec.title != null) {
+            Text(
+                spec.title,
+                color = Color.White.copy(alpha = 0.65f),
+                fontSize = 13.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 11.dp)
+            )
             Box(Modifier.fillMaxWidth().height(0.5.dp).background(Color.White.copy(alpha = 0.18f)))
         }
         spec.items.forEachIndexed { i, item ->
             Text(
                 item.label,
-                color = if (item.destructive) Color(0xFFFF7A7A) else Color.White,
+                color = if (item.destructive) Color(0xFFFF6B6B) else Color.White,
                 fontSize = 16.sp,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -187,7 +203,7 @@ private fun MenuCard(s: LauncherState, spec: MenuSpec) {
                     .padding(horizontal = 18.dp, vertical = 13.dp)
             )
             if (i < spec.items.lastIndex) {
-                Box(Modifier.fillMaxWidth().height(0.5.dp).background(Color.White.copy(alpha = 0.12f)))
+                Box(Modifier.fillMaxWidth().height(0.5.dp).background(Color.White.copy(alpha = 0.14f)))
             }
         }
     }

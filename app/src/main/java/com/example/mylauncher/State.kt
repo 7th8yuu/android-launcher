@@ -4,6 +4,7 @@ import android.app.ActivityOptions
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.util.Log
 import android.provider.AlarmClock
 import android.provider.MediaStore
 import android.widget.Toast
@@ -50,11 +51,14 @@ class LauncherState(val act: MainActivity) {
     var drawer by mutableFloatStateOf(0f)
     var query by mutableStateOf("")
     var openCat by mutableStateOf<Cat?>(null)
-    var libraryMode by mutableStateOf(true)
+    var libraryFocus by mutableStateOf(false)
     var menu by mutableStateOf<MenuSpec?>(null)
     var showSettings by mutableStateOf(false)
     var showWidgets by mutableStateOf(false)
     var launching by mutableStateOf(false)
+    var openFolder by mutableStateOf<String?>(null)
+    var folderFrom by mutableStateOf(Rect.Zero)
+    val folderP = Animatable(0f)
     var homeSignal by mutableIntStateOf(0)
     var pageRequest by mutableIntStateOf(-1)
     var currentPage by mutableIntStateOf(0)
@@ -150,7 +154,7 @@ class LauncherState(val act: MainActivity) {
         spotJob?.cancel()
         drawer = 0f; spot = 0f
         query = ""; spotQuery = ""
-        openCat = null; menu = null
+        openCat = null; menu = null; openFolder = null
         if (r == null || r.width <= 0f) {
             startApp(app)
             return
@@ -234,19 +238,139 @@ class LauncherState(val act: MainActivity) {
         pageRequest = to
     }
 
-    /** Kéo thả sắp xếp trong chế độ chỉnh sửa. */
+    /**
+     * Kéo thả trong chế độ chỉnh sửa: thả ở rìa ô khác thì đổi chỗ, thả vào giữa ô khác thì gộp thành thư mục.
+     */
     fun dragReorder(page: Int, d: DragCtx) {
         val k = d.key ?: return
-        val target = d.rects.entries.firstOrNull { it.key != k && it.value.contains(d.pos) }?.key ?: return
+        val hit = d.rects.entries.firstOrNull { it.key != k && it.value.contains(d.pos) }
+        if (hit == null) { d.mergeKey = null; return }
+        val r = hit.value
+        val inner = r.deflate(minOf(r.width, r.height) * 0.28f)
+        if (!isFolder(k) && inner.contains(d.pos)) { d.mergeKey = hit.key; return }
+        d.mergeKey = null
         val pages = store.pages.toMutableList()
         val list = pages.getOrNull(page)?.apps?.toMutableList() ?: return
         val from = list.indexOf(k)
-        val to = list.indexOf(target)
+        val to = list.indexOf(hit.key)
         if (from < 0 || to < 0) return
         list.removeAt(from)
         list.add(to, k)
         pages[page] = pages[page].copy(apps = list)
         store.commitPages(pages)
+    }
+
+    // ---------- Thư mục ----------
+    fun isFolder(token: String) = token.startsWith("folder:")
+    fun folderOf(token: String): Folder? = store.folders[token.removePrefix("folder:")]
+
+    fun mergeInto(page: Int, fromKey: String, toKey: String) {
+        if (fromKey == toKey || isFolder(fromKey)) return
+        val pages = store.pages.toMutableList()
+        val pg = pages.getOrNull(page) ?: return
+        val list = pg.apps.toMutableList()
+        if (!list.remove(fromKey)) return
+        val folders = store.folders.toMutableMap()
+        if (isFolder(toKey)) {
+            val id = toKey.removePrefix("folder:")
+            val f = folders[id] ?: return
+            if (fromKey !in f.apps) folders[id] = f.copy(apps = f.apps + fromKey)
+        } else {
+            val idx = list.indexOf(toKey)
+            if (idx < 0) return
+            val id = "f" + System.currentTimeMillis()
+            val name = byKey[toKey]?.let { catOf(it).title } ?: "Thư mục"
+            folders[id] = Folder(id, name, listOf(toKey, fromKey))
+            list[idx] = "folder:$id"
+        }
+        pages[page] = pg.copy(apps = list)
+        store.commitFolders(folders)
+        store.commitPages(pages)
+    }
+
+    fun openFolderAt(token: String, from: Rect) {
+        folderFrom = from
+        openFolder = token
+        uiScope.launch {
+            folderP.snapTo(0f)
+            folderP.animateTo(1f, spring(dampingRatio = 0.8f, stiffness = 320f))
+        }
+    }
+
+    fun closeFolder() {
+        if (openFolder == null) return
+        uiScope.launch {
+            folderP.animateTo(0f, spring(dampingRatio = 0.9f, stiffness = 420f))
+            openFolder = null
+        }
+    }
+
+    fun renameFolder(token: String, name: String) {
+        val id = token.removePrefix("folder:")
+        val f = store.folders[id] ?: return
+        store.commitFolders(store.folders + (id to f.copy(name = name)))
+    }
+
+    /** Đưa một ứng dụng ra khỏi thư mục (nằm ngay sau thư mục trên màn hình chính). */
+    fun removeFromFolder(token: String, appKey: String) {
+        val id = token.removePrefix("folder:")
+        val folders = store.folders.toMutableMap()
+        val f = folders[id] ?: return
+        val remaining = f.apps - appKey
+        val pages = store.pages.toMutableList()
+        val pi = pages.indexOfFirst { token in it.apps }
+        if (pi < 0) return
+        val list = pages[pi].apps.toMutableList()
+        val at = list.indexOf(token)
+        list.add(at + 1, appKey)
+        if (remaining.size <= 1) {
+            list.remove(token)
+            val rep = remaining.firstOrNull()
+            if (rep != null) list.add(list.indexOf(appKey), rep)
+            folders.remove(id)
+            if (openFolder == token) { openFolder = null }
+        } else {
+            folders[id] = f.copy(apps = remaining)
+        }
+        pages[pi] = pages[pi].copy(apps = list)
+        store.commitFolders(folders)
+        store.commitPages(pages)
+    }
+
+    fun deleteFolder(token: String) {
+        val id = token.removePrefix("folder:")
+        val f = store.folders[id] ?: return
+        val pages = store.pages.map { p ->
+            if (token in p.apps) p.copy(apps = p.apps.flatMap { if (it == token) f.apps else listOf(it) }) else p
+        }
+        store.commitFolders(store.folders - id)
+        store.commitPages(pages)
+        if (openFolder == token) openFolder = null
+    }
+
+    private fun purgeFromFolders(key: String) {
+        var changed = false
+        val folders = store.folders.toMutableMap()
+        var pages = store.pages
+        for ((id, f) in store.folders) {
+            if (key !in f.apps) continue
+            changed = true
+            val rem = f.apps - key
+            val token = "folder:$id"
+            if (rem.size <= 1) {
+                pages = pages.map { p ->
+                    if (token in p.apps) p.copy(apps = p.apps.flatMap { if (it == token) rem else listOf(it) }) else p
+                }
+                folders.remove(id)
+                if (openFolder == token) openFolder = null
+            } else {
+                folders[id] = f.copy(apps = rem)
+            }
+        }
+        if (changed) {
+            store.commitFolders(folders)
+            store.commitPages(pages)
+        }
     }
 
     fun addToDock(app: AppEntry) {
@@ -261,6 +385,7 @@ class LauncherState(val act: MainActivity) {
         store.commitHidden(store.hidden + app.key)
         store.commitDock(store.dock - app.key)
         store.commitPages(store.pages.map { it.copy(apps = it.apps - app.key) })
+        purgeFromFolders(app.key)
         toast("Đã ẩn ${app.label} (bỏ ẩn trong Cài đặt)")
     }
 
@@ -321,6 +446,7 @@ class LauncherState(val act: MainActivity) {
             if (target == 0f) {
                 query = ""
                 openCat = null
+                libraryFocus = false
             }
         }
     }
@@ -411,16 +537,35 @@ class LauncherState(val act: MainActivity) {
         hits = local + contacts
     }
 
-    fun askAi(q: String) {
+    private fun effectiveModel(): String {
+        val m = store.aiModel.value.trim()
+        return if (m.isEmpty() || m.startsWith("claude")) Ai.DEFAULT_MODEL else m
+    }
+
+    /** Gọi Gemini; nếu model không tồn tại (404) thì tự hỏi danh sách model và chọn cái phù hợp. */
+    private suspend fun callAi(system: String, user: String, maxTokens: Int): AiResult {
         val key = store.aiKey.value.trim()
-        if (key.isEmpty()) { toast("Chưa có khoá API — thêm trong Cài đặt → AI"); return }
+        val model = effectiveModel()
+        var r = Ai.ask(key, model, system, user, maxTokens)
+        if (r.code == 404 || (r.code == 400 && (r.error ?: "").contains("model", ignoreCase = true))) {
+            val picked = Ai.pickModel(Ai.listModels(key))
+            if (picked != null && picked != model) {
+                store.aiModel.value = picked
+                r = Ai.ask(key, picked, system, user, maxTokens)
+            }
+        }
+        return r
+    }
+
+    fun askAi(q: String) {
+        if (store.aiKey.value.isBlank()) { toast("Chưa có khoá API Gemini — thêm trong Cài đặt → AI"); return }
         aiBusy = true
         aiText = ""
         aiError = null
         aiActions = emptyList()
         act.lifecycleScope.launch {
             val labels = apps.map { it.label }.distinct().take(200).joinToString(", ")
-            val r = Ai.ask(key, store.aiModel.value.trim(), Ai.system(labels), q)
+            val r = callAi(Ai.system(labels), q, 1024)
             aiBusy = false
             val t = r.text
             if (t != null) {
@@ -464,24 +609,22 @@ class LauncherState(val act: MainActivity) {
     }
 
     fun testAi() {
-        val key = store.aiKey.value.trim()
-        if (key.isEmpty()) { toast("Hãy nhập khoá API trước"); return }
+        if (store.aiKey.value.isBlank()) { toast("Hãy nhập khoá API Gemini trước"); return }
         toast("Đang kiểm tra…")
         act.lifecycleScope.launch {
-            val r = Ai.ask(key, store.aiModel.value.trim(), "Trả lời đúng một từ.", "Nói OK", 20)
-            toast(if (r.text != null) "Kết nối thành công ✓" else (r.error ?: "Thất bại"))
+            val r = callAi("Trả lời đúng một từ.", "Nói OK", 64)
+            toast(if (r.text != null) "Kết nối thành công ✓ (${store.aiModel.value})" else (r.error ?: "Thất bại"))
         }
     }
 
     /** Nhờ AI phân loại các ứng dụng vào Trò chơi / Mạng xã hội / Giải trí / Tiện ích / Khác. */
     fun aiCategorize() {
-        val key = store.aiKey.value.trim()
-        if (key.isEmpty()) { toast("Hãy nhập khoá API trước"); return }
+        if (store.aiKey.value.isBlank()) { toast("Hãy nhập khoá API Gemini trước"); return }
         toast("AI đang phân loại ứng dụng…")
         act.lifecycleScope.launch {
             val list = apps.distinctBy { it.pkg }.take(250)
             val user = list.joinToString("\n") { "${it.pkg} | ${it.label}" }
-            val r = Ai.ask(key, store.aiModel.value.trim(), Ai.CATEGORIZE_SYSTEM, user, 4000)
+            val r = callAi(Ai.CATEGORIZE_SYSTEM, user, 8192)
             val json = r.text?.let { Ai.extractJson(it) }
             if (json == null) {
                 toast(r.error ?: "AI trả về định dạng không đọc được")
@@ -500,6 +643,7 @@ class LauncherState(val act: MainActivity) {
 
     // ---------- Điều hướng ----------
     fun onHomePressed() {
+        openFolder = null
         menu = null
         showSettings = false
         showWidgets = false
@@ -511,8 +655,10 @@ class LauncherState(val act: MainActivity) {
     }
 
     fun onBack() {
+        Log.d("MyLauncher", "onBack menu=${menu != null} folder=$openFolder spot=$spot q='$spotQuery' drawer=$drawer focus=$libraryFocus edit=$editMode")
         when {
             menu != null -> menu = null
+            openFolder != null -> closeFolder()
             showWidgets -> showWidgets = false
             showSettings -> showSettings = false
             spot > 0f -> if (spotQuery.isNotEmpty()) onSpotQuery("") else closeSpotlight()

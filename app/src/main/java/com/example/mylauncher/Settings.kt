@@ -42,6 +42,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -139,7 +140,7 @@ private fun SettingsScreen(s: LauncherState) {
                         "${st.iconSize.value}dp"
                     ) { st.iconSize.value = it.roundToInt() }
                     ChipRow("Số cột", listOf("4", "5"), st.columns.value - 4) { st.columns.value = it + 4 }
-                    ChipRow("Hình dạng biểu tượng", listOf("Gốc", "Bo góc", "Tròn"), st.iconShape.value) {
+                    ChipRow("Hình dạng biểu tượng", listOf("Gốc", "iOS", "Tròn"), st.iconShape.value) {
                         st.iconShape.value = it
                     }
                     SwitchRow("Hiện tên ứng dụng", null, st.showLabels.value) { st.showLabels.value = it }
@@ -209,14 +210,15 @@ private fun SettingsScreen(s: LauncherState) {
             }
 
             item {
-                Section("AI (Claude)") {
+                Section("AI (Gemini)") {
                     Text(
-                        "Khi bạn hỏi AI trong ô Tìm kiếm, câu hỏi và tên các ứng dụng đã cài sẽ được gửi tới api.anthropic.com " +
-                            "bằng khoá API của bạn. Khoá chỉ lưu trên máy này (bộ nhớ riêng của ứng dụng).",
+                        "Khi bạn hỏi AI trong ô Tìm kiếm, câu hỏi và tên các ứng dụng đã cài sẽ được gửi tới Google Gemini API " +
+                            "(generativelanguage.googleapis.com) bằng khoá của bạn. Lấy khoá miễn phí tại aistudio.google.com/apikey. " +
+                            "Khoá chỉ lưu trên máy này (bộ nhớ riêng của ứng dụng).",
                         color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp
                     )
-                    GlassField(st.aiKey.value, { st.aiKey.value = it }, "Khoá API (sk-ant-…)", password = true)
-                    GlassField(st.aiModel.value, { st.aiModel.value = it }, "Tên model", password = false)
+                    GlassField(st.aiKey.value, { st.aiKey.value = it }, "Khoá API Gemini (AIza…)", password = true)
+                    GlassField(st.aiModel.value, { st.aiModel.value = it }, "Tên model (để trống = tự chọn)", password = false)
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Button(onClick = { s.testAi() }) { Text("Kiểm tra") }
                         OutlinedButton(onClick = { s.aiCategorize() }) { Text("Phân loại app bằng AI") }
@@ -285,7 +287,18 @@ private fun SwitchRow(title: String, sub: String?, checked: Boolean, onChange: (
             Text(title, color = Color.White, fontSize = 16.sp)
             if (sub != null) Text(sub, color = Color.White.copy(alpha = 0.65f), fontSize = 13.sp)
         }
-        Switch(checked = checked, onCheckedChange = onChange)
+        Switch(
+            checked = checked,
+            onCheckedChange = onChange,
+            colors = SwitchDefaults.colors(
+                checkedTrackColor = Color(0xFF34C759),
+                checkedThumbColor = Color.White,
+                checkedBorderColor = Color.Transparent,
+                uncheckedTrackColor = Color.White.copy(alpha = 0.22f),
+                uncheckedThumbColor = Color.White,
+                uncheckedBorderColor = Color.Transparent
+            )
+        )
     }
 }
 

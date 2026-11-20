@@ -23,9 +23,19 @@ fun AiAction.describe(): String = when (this) {
     is AiAction.Setting -> "Mở cài đặt: ${this.key}"
 }
 
-class AiResult(val text: String?, val error: String?)
+class AiResult(val text: String?, val error: String?, val code: Int = 0)
 
+/** Trợ lý AI dùng Google Gemini API (generativelanguage.googleapis.com). */
 object Ai {
+    const val DEFAULT_MODEL = "gemini-3.5-flash-lite"
+    private const val BASE = "https://generativelanguage.googleapis.com/v1beta"
+
+    // Thứ tự ưu tiên khi tự chọn model (nhanh + rẻ trước)
+    private val preferred = listOf(
+        "gemini-3.5-flash-lite", "gemini-flash-lite-latest", "gemini-flash-latest",
+        "gemini-4-hydrogen", "gemini-3.6-flash", "gemini-3-flash-preview", "gemini-2.5-flash"
+    )
+
     fun system(appLabels: String): String =
         "Bạn là trợ lý tích hợp trong launcher Android 'My Launcher'. Trả lời ngắn gọn, thân thiện, cùng ngôn ngữ với người dùng. " +
             "Nếu người dùng muốn thực hiện một hành động, thêm vào CUỐI câu trả lời một hoặc nhiều dòng riêng đúng định dạng: " +
@@ -40,45 +50,101 @@ object Ai {
             "TOOLS=tiện ích, hệ thống, năng suất, bản đồ, ngân hàng; OTHER=còn lại. " +
             "Mỗi dòng đầu vào có dạng 'package | tên'. Chỉ trả về MỘT JSON object dạng {\"package\":\"NHÓM\"}, không thêm chữ nào khác."
 
-    suspend fun ask(key: String, model: String, system: String, user: String, maxTokens: Int = 700): AiResult =
+    private fun open(url: String, key: String, post: Boolean): HttpURLConnection {
+        val c = URL(url).openConnection() as HttpURLConnection
+        c.requestMethod = if (post) "POST" else "GET"
+        c.connectTimeout = 15000
+        c.readTimeout = 60000
+        c.setRequestProperty("x-goog-api-key", key)
+        if (post) {
+            c.doOutput = true
+            c.setRequestProperty("content-type", "application/json")
+        }
+        return c
+    }
+
+    private fun errorOf(code: Int, txt: String): String {
+        val msg = try {
+            JSONObject(txt).getJSONObject("error").getString("message")
+        } catch (_: Exception) {
+            txt.take(200)
+        }
+        return "Lỗi $code: $msg"
+    }
+
+    suspend fun ask(key: String, model: String, system: String, user: String, maxTokens: Int = 1024): AiResult =
         withContext(Dispatchers.IO) {
             try {
                 val body = JSONObject()
-                    .put("model", model)
-                    .put("max_tokens", maxTokens)
-                    .put("system", system)
-                    .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", user)))
-                val c = URL("https://api.anthropic.com/v1/messages").openConnection() as HttpURLConnection
-                c.requestMethod = "POST"
-                c.connectTimeout = 15000
-                c.readTimeout = 60000
-                c.doOutput = true
-                c.setRequestProperty("content-type", "application/json")
-                c.setRequestProperty("x-api-key", key)
-                c.setRequestProperty("anthropic-version", "2023-06-01")
+                    .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
+                    .put(
+                        "contents",
+                        JSONArray().put(
+                            JSONObject().put("role", "user")
+                                .put("parts", JSONArray().put(JSONObject().put("text", user)))
+                        )
+                    )
+                    .put("generationConfig", JSONObject().put("maxOutputTokens", maxTokens))
+                val name = model.removePrefix("models/")
+                val c = open("$BASE/models/$name:generateContent", key, true)
                 c.outputStream.use { it.write(body.toString().toByteArray()) }
                 val code = c.responseCode
                 val stream = if (code in 200..299) c.inputStream else c.errorStream
                 val txt = stream?.bufferedReader()?.use { it.readText() } ?: ""
-                if (code !in 200..299) {
-                    val msg = try {
-                        JSONObject(txt).getJSONObject("error").getString("message")
-                    } catch (_: Exception) {
-                        txt.take(200)
-                    }
-                    return@withContext AiResult(null, "Lỗi $code: $msg")
+                if (code !in 200..299) return@withContext AiResult(null, errorOf(code, txt), code)
+                val root = JSONObject(txt)
+                val cands = root.optJSONArray("candidates")
+                if (cands == null || cands.length() == 0) {
+                    val why = root.optJSONObject("promptFeedback")?.optString("blockReason").orEmpty()
+                    return@withContext AiResult(null, "Gemini không trả lời" + if (why.isNotEmpty()) " ($why)" else "", code)
                 }
-                val arr = JSONObject(txt).getJSONArray("content")
+                val parts = cands.getJSONObject(0).optJSONObject("content")?.optJSONArray("parts")
                 val sb = StringBuilder()
-                for (i in 0 until arr.length()) {
-                    val o = arr.getJSONObject(i)
-                    if (o.optString("type") == "text") sb.append(o.getString("text"))
+                if (parts != null) {
+                    for (i in 0 until parts.length()) {
+                        val p = parts.getJSONObject(i)
+                        if (p.optBoolean("thought", false)) continue
+                        if (p.has("text")) sb.append(p.getString("text"))
+                    }
                 }
-                AiResult(sb.toString().trim(), null)
+                val out = sb.toString().trim()
+                if (out.isEmpty()) AiResult(null, "Gemini trả về nội dung trống", code) else AiResult(out, null, code)
             } catch (e: Exception) {
-                AiResult(null, e.message ?: "Lỗi mạng")
+                AiResult(null, e.message ?: "Lỗi mạng", -1)
             }
         }
+
+    /** Danh sách model hỗ trợ generateContent của khoá này. */
+    suspend fun listModels(key: String): List<String> = withContext(Dispatchers.IO) {
+        try {
+            val c = open("$BASE/models?pageSize=200", key, false)
+            if (c.responseCode !in 200..299) return@withContext emptyList<String>()
+            val txt = c.inputStream.bufferedReader().use { it.readText() }
+            val arr = JSONObject(txt).optJSONArray("models") ?: return@withContext emptyList<String>()
+            val out = ArrayList<String>()
+            for (i in 0 until arr.length()) {
+                val m = arr.getJSONObject(i)
+                val methods = m.optJSONArray("supportedGenerationMethods")
+                var ok = false
+                if (methods != null) {
+                    for (j in 0 until methods.length()) {
+                        if (methods.getString(j) == "generateContent") ok = true
+                    }
+                }
+                if (ok) out.add(m.getString("name").removePrefix("models/"))
+            }
+            out
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    fun pickModel(available: List<String>): String? {
+        for (p in preferred) if (p in available) return p
+        return available.firstOrNull { it.contains("flash-lite") }
+            ?: available.firstOrNull { it.contains("flash") && !it.contains("image") && !it.contains("tts") && !it.contains("live") }
+            ?: available.firstOrNull { it.startsWith("gemini") && !it.contains("image") && !it.contains("tts") && !it.contains("embedding") }
+    }
 
     /** Tách các dòng "ACTION: ..." ra khỏi nội dung trả lời. */
     fun parse(text: String): Pair<String, List<AiAction>> {
